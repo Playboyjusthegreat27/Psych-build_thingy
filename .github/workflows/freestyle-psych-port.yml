@@ -73,6 +73,21 @@ jobs:
           # The ClickStuff typedef is a module subtype and needs an explicit import.
           FLXANIMATE="$(haxelib path flxanimate | head -n 1)"
           sed -i '/import flxanimate.animate.FlxAnim;/a import flxanimate.animate.FlxAnim.ClickStuff;' "$FLXANIMATE/flxanimate/FlxAnimate.hx"
+          # HTML5 cannot use sys.io.File. Route file-backed JSON through OpenFL's asset loader.
+          python3 - <<'PY'
+          from pathlib import Path
+          paths = Path("source/backend/Paths.hx")
+          src = paths.read_text()
+          src = src.replace("spriteJson = File.getContent(spriteJson);", "spriteJson = getTextFromFile(spriteJson);")
+          src = src.replace("animationJson = File.getContent(animationJson);", "animationJson = getTextFromFile(animationJson);")
+          paths.write_text(src)
+
+          animate = Path("$FLXANIMATE/flxanimate/FlxAnimate.hx")
+          src = animate.read_text()
+          src = src.replace("sys.io.File.getContent(myJson)", "#if sys sys.io.File.getContent(myJson) #else openfl.Assets.getText(myJson) #end")
+          src = src.replace("sys.io.File.getContent(pathOrStr)", "#if sys sys.io.File.getContent(pathOrStr) #else openfl.Assets.getText(pathOrStr) #end")
+          animate.write_text(src)
+          PY
           haxelib run lime setup -y
 
       - name: Build HTML5
