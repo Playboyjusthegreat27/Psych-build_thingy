@@ -45,7 +45,7 @@ jobs:
       - name: Set up Haxe
         uses: krdlab/setup-haxe@v2
         with:
-          haxe-version: 4.2.5
+          haxe-version: 4.3.2
 
       - name: Install system dependencies
         run: |
@@ -70,6 +70,11 @@ jobs:
           haxelib set flixel-addons 3.2.1
           haxelib install flixel-ui 2.5.0
           haxelib set flixel-ui 2.5.0
+          # Use the matching Lime/OpenFL versions documented for Psych 0.7.x.
+          haxelib install lime 8.0.1
+          haxelib set lime 8.0.1
+          haxelib install openfl 9.3.2
+          haxelib set openfl 9.3.2
           # The ClickStuff typedef is a module subtype and needs an explicit import.
           export FLXANIMATE="$(haxelib path flxanimate | head -n 1)"
           sed -i '/import flxanimate.animate.FlxAnim;/a import flxanimate.animate.FlxAnim.ClickStuff;' "$FLXANIMATE/flxanimate/FlxAnimate.hx"
@@ -88,6 +93,36 @@ jobs:
           src = src.replace("sys.io.File.getContent(myJson)", "#if sys sys.io.File.getContent(myJson) #else openfl.Assets.getText(myJson) #end")
           src = src.replace("sys.io.File.getContent(pathOrStr)", "#if sys sys.io.File.getContent(pathOrStr) #else openfl.Assets.getText(pathOrStr) #end")
           animate.write_text(src)
+          PY
+          # HTML5 cannot enumerate local directories; the character list file is still loaded above.
+          python3 - <<'PY'
+          from pathlib import Path
+          editor = Path("source/states/editors/CharacterEditorState.hx")
+          src = editor.read_text()
+          old = """\t\tfor (folder in foldersToCheck)
+          \t\t\tfor (file in FileSystem.readDirectory(folder))
+          \t\t\t\tif(file.toLowerCase().endsWith('.json'))
+          \t\t\t\t{
+          \t\t\t\t\tvar charToCheck:String = file.substr(0, file.length - 5);
+          \t\t\t\t\tif(!characterList.contains(charToCheck))
+          \t\t\t\t\t\tcharacterList.push(charToCheck);
+          \t\t\t\t}"""
+          new = """          #if sys
+          \t\tfor (folder in foldersToCheck)
+          \t\t\tfor (file in FileSystem.readDirectory(folder))
+          \t\t\t\tif(file.toLowerCase().endsWith('.json'))
+          \t\t\t\t{
+          \t\t\t\t\tvar charToCheck:String = file.substr(0, file.length - 5);
+          \t\t\t\t\tif(!characterList.contains(charToCheck))
+          \t\t\t\t\t\tcharacterList.push(charToCheck);
+          \t\t\t\t}
+          #end"""
+          if old not in src:
+              raise SystemExit("Character editor directory loop did not match")
+          editor.write_text(src.replace(old, new))
+          cool = Path("source/backend/CoolUtil.hx")
+          src = cool.read_text().replace('FlxG.error("Platform is not supported for CoolUtil.openFolder");', 'trace("Platform is not supported for CoolUtil.openFolder");')
+          cool.write_text(src)
           PY
           haxelib run lime setup -y
 
