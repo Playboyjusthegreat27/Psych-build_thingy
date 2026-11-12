@@ -137,6 +137,7 @@ jobs:
           # Keep its software blend fallback on HTML5; desktop retains the full filter path.
           python3 - <<'PY'
           from pathlib import Path
+          import os
           p = Path(os.environ["FLXANIMATE"]) / "flxanimate/display/FlxAnimateFilterRenderer.hx"
           s = p.read_text()
           start = s.index("\tpublic function applyBlend(blend:BlendMode, bitmap:BitmapData)")
