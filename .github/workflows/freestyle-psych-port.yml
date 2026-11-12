@@ -1,0 +1,209 @@
+name: Build Friday Night Freestyle on Psych
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: freestyle-psych-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout port configuration
+        uses: actions/checkout@v4
+
+      - name: Checkout Psych Engine 0.7.3
+        uses: actions/checkout@v4
+        with:
+          repository: ShadowMario/FNF-PsychEngine
+          ref: 0.7.3
+          path: psych
+
+      - name: Disable desktop-only Discord RPC for HTML5
+        run: |
+          sed -i 's/<define name="DISCORD_ALLOWED" \/>/<define name="DISCORD_ALLOWED" if="desktop" \/>/' psych/Project.xml
+          grep 'DISCORD_ALLOWED' psych/Project.xml
+
+      - name: Checkout Freestyle HTML5 assets and charts
+        uses: actions/checkout@v4
+        with:
+          repository: Playboyjusthegreat27/freestyle-html
+          ref: main
+          path: freestyle-html
+
+      - name: Set up Haxe
+        uses: krdlab/setup-haxe@v2
+        with:
+          haxe-version: 4.3.2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libvlc-dev libvlccore-dev
+
+      - name: Convert and install Freestyle content
+        run: |
+          python3 tools/port_freestyle.py psych freestyle-html
+
+      - name: Install Psych Engine libraries
+        working-directory: psych
+        run: |
+          mkdir -p ~/haxelib
+          haxelib setup ~/haxelib
+          chmod +x setup/setup-unix.sh
+          ./setup/setup-unix.sh
+          # Psych 0.7.3 requires the older Flixel API used by its source.
+          haxelib install flixel 5.5.0
+          haxelib set flixel 5.5.0
+          haxelib install flixel-addons 3.2.1
+          haxelib set flixel-addons 3.2.1
+          haxelib install flixel-ui 2.5.0
+          haxelib set flixel-ui 2.5.0
+          # Use the matching Lime/OpenFL versions documented for Psych 0.7.x.
+          haxelib install lime 8.0.1
+          haxelib set lime 8.0.1
+          haxelib install openfl 9.3.2
+          haxelib set openfl 9.3.2
+          # The ClickStuff typedef is a module subtype and needs an explicit import.
+          export FLXANIMATE="$(haxelib path flxanimate | head -n 1)"
+          sed -i '/import flxanimate.animate.FlxAnim;/a import flxanimate.animate.FlxAnim.ClickStuff;' "$FLXANIMATE/flxanimate/FlxAnimate.hx"
+          # HTML5 cannot use sys.io.File. Route file-backed JSON through OpenFL's asset loader.
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          paths = Path("source/backend/Paths.hx")
+          src = paths.read_text()
+          src = src.replace("spriteJson = File.getContent(spriteJson);", "spriteJson = getTextFromFile(spriteJson);")
+          src = src.replace("animationJson = File.getContent(animationJson);", "animationJson = getTextFromFile(animationJson);")
+          paths.write_text(src)
+
+          animate = Path(os.environ["FLXANIMATE"]) / "flxanimate/FlxAnimate.hx"
+          src = animate.read_text()
+          src = src.replace("sys.io.File.getContent(myJson)", "#if sys sys.io.File.getContent(myJson) #else openfl.Assets.getText(myJson) #end")
+          src = src.replace("sys.io.File.getContent(pathOrStr)", "#if sys sys.io.File.getContent(pathOrStr) #else openfl.Assets.getText(pathOrStr) #end")
+          animate.write_text(src)
+          PY
+          # Force Psych's own Option class to avoid a same-named Flixel UI type collision.
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ("GraphicsSettingsSubState.hx", "VisualsUISubState.hx", "GameplaySettingsSubState.hx"):
+              p = Path("source/options") / name
+              s = p.read_text()
+              s = s.replace("var option:Option = new Option(", "var option:options.Option = new options.Option(")
+              p.write_text(s)
+          PY
+          # HTML5 cannot enumerate local directories; the character list file is still loaded above.
+          python3 - <<'PY'
+          from pathlib import Path
+          editor = Path("source/states/editors/CharacterEditorState.hx")
+          src = editor.read_text()
+          old = """\t\tfor (folder in foldersToCheck)
+          \t\t\tfor (file in FileSystem.readDirectory(folder))
+          \t\t\t\tif(file.toLowerCase().endsWith('.json'))
+          \t\t\t\t{
+          \t\t\t\t\tvar charToCheck:String = file.substr(0, file.length - 5);
+          \t\t\t\t\tif(!characterList.contains(charToCheck))
+          \t\t\t\t\t\tcharacterList.push(charToCheck);
+          \t\t\t\t}"""
+          new = """          #if sys
+          \t\tfor (folder in foldersToCheck)
+          \t\t\tfor (file in FileSystem.readDirectory(folder))
+          \t\t\t\tif(file.toLowerCase().endsWith('.json'))
+          \t\t\t\t{
+          \t\t\t\t\tvar charToCheck:String = file.substr(0, file.length - 5);
+          \t\t\t\t\tif(!characterList.contains(charToCheck))
+          \t\t\t\t\t\tcharacterList.push(charToCheck);
+          \t\t\t\t}
+          #end"""
+          if old not in src:
+              raise SystemExit("Character editor directory loop did not match")
+          editor.write_text(src.replace(old, new))
+          cool = Path("source/backend/CoolUtil.hx")
+          src = cool.read_text().replace('FlxG.error("Platform is not supported for CoolUtil.openFolder");', 'trace("Platform is not supported for CoolUtil.openFolder");')
+          cool.write_text(src)
+          PY
+          # Current FlxAnimate filter renderer uses removed OpenFL canvas internals.
+          # Keep its software blend fallback on HTML5; desktop retains the full filter path.
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          p = Path(os.environ["FLXANIMATE"]) / "flxanimate/display/FlxAnimateFilterRenderer.hx"
+          s = p.read_text()
+          method = s.index("public function applyBlend(blend:BlendMode, bitmap:BitmapData)")
+          start = s.rfind("\n", 0, method) + 1
+          next_method = s.index("public function graphicstoBitmapData", method)
+          end = s.rfind("\n", 0, next_method) + 1
+          fn = """\tpublic function applyBlend(blend:BlendMode, bitmap:BitmapData)
+          \t{
+          \t\t#if (js && html5)
+          \t\t// Canvas internals used by the upstream renderer are unavailable in this OpenFL version.
+          \t\treturn bitmap;
+          \t\t#else
+          \t\tvar bmp = new BitmapData(bitmap.width, bitmap.height, 0);
+          \t\tvar renderer = new CairoRenderer(new Cairo(bmp.getSurface()));
+          \t\tsetRenderer(renderer, bmp.rect);
+          \t\trenderer.__setBlendMode(blend);
+          \t\tbmp.__drawCairo(bitmap, renderer);
+          \t\treturn bmp;
+          \t\t#end
+          \t}
+          """
+          p.write_text(s[:start] + fn + s[end:])
+          PY
+          haxelib run lime setup -y
+
+      - name: Guard optional weekBefore values in Freeplay
+        working-directory: psych
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("source/states/FreeplayState.hx")
+          s = p.read_text()
+          old = """\tfunction weekIsLocked(name:String):Bool {
+          \t\tvar leWeek:WeekData = WeekData.weeksLoaded.get(name);
+          \t\treturn (!leWeek.startUnlocked && leWeek.weekBefore.length > 0 && (!StoryMenuState.weekCompleted.exists(leWeek.weekBefore) || !StoryMenuState.weekCompleted.get(leWeek.weekBefore)));
+          \t}"""
+          new = """\tfunction weekIsLocked(name:String):Bool {
+          \t\tvar leWeek:WeekData = WeekData.weeksLoaded.get(name);
+          \t\treturn (leWeek != null && !leWeek.startUnlocked && leWeek.weekBefore != null && leWeek.weekBefore.length > 0 && (!StoryMenuState.weekCompleted.exists(leWeek.weekBefore) || !StoryMenuState.weekCompleted.get(leWeek.weekBefore)));
+          \t}"""
+          if old not in s:
+              raise SystemExit("FreeplayState.weekIsLocked did not match expected Psych 0.7.3 source")
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Build HTML5
+        working-directory: psych
+        run: haxelib run lime build html5 -release
+
+      - name: Package external chart and week data
+        run: |
+          OUT="psych/export/release/html5/bin"
+          test -f "$OUT/index.html"
+          mkdir -p "$OUT/assets"
+          cp -R psych/assets/shared/data "$OUT/assets/data"
+          cp -R psych/assets/shared/weeks "$OUT/assets/weeks"
+          cp -R psych/assets/shared/characters "$OUT/assets/characters"
+          test -f "$OUT/assets/data/doobop/doobop-hard.json"
+          test -f "$OUT/assets/weeks/freestyle1.json"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: psych/export/release/html5/bin
+
+      - name: Deploy to GitHub Pages
+        if: github.event_name != 'pull_request'
+        id: deployment
+        uses: actions/deploy-pages@v5
