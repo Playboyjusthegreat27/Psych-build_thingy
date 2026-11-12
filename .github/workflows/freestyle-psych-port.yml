@@ -30,6 +30,11 @@ jobs:
           ref: 0.7.3
           path: psych
 
+      - name: Disable desktop-only Discord RPC for HTML5
+        run: |
+          sed -i 's/<define name="DISCORD_ALLOWED" \/>/<define name="DISCORD_ALLOWED" if="desktop" \/>/' psych/Project.xml
+          grep 'DISCORD_ALLOWED' psych/Project.xml
+
       - name: Checkout Freestyle HTML5 assets and charts
         uses: actions/checkout@v4
         with:
