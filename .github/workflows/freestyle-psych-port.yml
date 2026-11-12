@@ -63,6 +63,16 @@ jobs:
           haxelib setup ~/haxelib
           chmod +x setup/setup-unix.sh
           ./setup/setup-unix.sh
+          # Psych 0.7.3 requires the older Flixel API used by its source.
+          haxelib install flixel 5.5.0
+          haxelib set flixel 5.5.0
+          haxelib install flixel-addons 3.2.1
+          haxelib set flixel-addons 3.2.1
+          haxelib install flixel-ui 2.5.0
+          haxelib set flixel-ui 2.5.0
+          # The ClickStuff typedef is a module subtype and needs an explicit import.
+          FLXANIMATE="$(haxelib path flxanimate | head -n 1)"
+          sed -i '/import flxanimate.animate.FlxAnim;/a import flxanimate.animate.FlxAnim.ClickStuff;' "$FLXANIMATE/flxanimate/FlxAnimate.hx"
           haxelib run lime setup -y
 
       - name: Build HTML5
