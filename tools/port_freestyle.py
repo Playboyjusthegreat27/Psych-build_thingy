@@ -52,9 +52,9 @@ colors = {
     "senpai-angry": [255, 100, 160], "spirit": [255, 255, 255],
 }
 
-data_dir = psych / "assets" / "data"
+data_dir = psych / "assets" / "shared" / "data"
 songs_dir = psych / "assets" / "songs"
-weeks_dir = psych / "assets" / "weeks"
+weeks_dir = psych / "assets" / "shared" / "weeks"
 data_dir.mkdir(parents=True, exist_ok=True)
 songs_dir.mkdir(parents=True, exist_ok=True)
 weeks_dir.mkdir(parents=True, exist_ok=True)
