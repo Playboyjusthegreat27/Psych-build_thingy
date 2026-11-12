@@ -1,0 +1,86 @@
+name: Build Friday Night Freestyle on Psych
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: freestyle-psych-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout port configuration
+        uses: actions/checkout@v4
+
+      - name: Checkout Psych Engine 0.7.3
+        uses: actions/checkout@v4
+        with:
+          repository: ShadowMario/FNF-PsychEngine
+          ref: 0.7.3
+          path: psych
+
+      - name: Checkout Freestyle HTML5 assets and charts
+        uses: actions/checkout@v4
+        with:
+          repository: Playboyjusthegreat27/freestyle-html
+          ref: main
+          path: freestyle-html
+
+      - name: Set up Haxe
+        uses: krdlab/setup-haxe@v2
+        with:
+          haxe-version: 4.2.5
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libvlc-dev libvlccore-dev
+
+      - name: Convert and install Freestyle content
+        run: |
+          python3 tools/port_freestyle.py psych freestyle-html
+
+      - name: Install Psych Engine libraries
+        working-directory: psych
+        run: |
+          mkdir -p ~/haxelib
+          haxelib setup ~/haxelib
+          chmod +x setup/setup-unix.sh
+          ./setup/setup-unix.sh
+          haxelib run lime setup -y
+
+      - name: Build HTML5
+        working-directory: psych
+        run: haxelib run lime build html5 -release
+
+      - name: Package external chart and week data
+        run: |
+          OUT="psych/export/release/html5/bin"
+          test -f "$OUT/index.html"
+          mkdir -p "$OUT/assets"
+          cp -R psych/assets/data "$OUT/assets/"
+          cp -R psych/assets/weeks "$OUT/assets/"
+          cp -R psych/assets/characters "$OUT/assets/"
+          test -f "$OUT/assets/data/doobop/doobop-hard.json"
+          test -f "$OUT/assets/weeks/freestyle1.json"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: psych/export/release/html5/bin
+
+      - name: Deploy to GitHub Pages
+        if: github.event_name != 'pull_request'
+        id: deployment
+        uses: actions/deploy-pages@v5
