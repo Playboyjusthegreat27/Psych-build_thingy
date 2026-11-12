@@ -141,9 +141,9 @@ jobs:
           p = Path(os.environ["FLXANIMATE"]) / "flxanimate/display/FlxAnimateFilterRenderer.hx"
           s = p.read_text()
           method = s.index("public function applyBlend(blend:BlendMode, bitmap:BitmapData)")
-          start = s.rfind("\\n", 0, method) + 1
+          start = s.rfind("\n", 0, method) + 1
           next_method = s.index("public function graphicstoBitmapData", method)
-          end = s.rfind("\\n", 0, next_method) + 1
+          end = s.rfind("\n", 0, next_method) + 1
           fn = """\tpublic function applyBlend(blend:BlendMode, bitmap:BitmapData)
           \t{
           \t\t#if (js && html5)
