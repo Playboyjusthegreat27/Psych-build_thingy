@@ -94,6 +94,15 @@ jobs:
           src = src.replace("sys.io.File.getContent(pathOrStr)", "#if sys sys.io.File.getContent(pathOrStr) #else openfl.Assets.getText(pathOrStr) #end")
           animate.write_text(src)
           PY
+          # Force Psych's own Option class to avoid a same-named Flixel UI type collision.
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in ("GraphicsSettingsSubState.hx", "VisualsUISubState.hx", "GameplaySettingsSubState.hx"):
+              p = Path("source/options") / name
+              s = p.read_text()
+              s = s.replace("var option:Option = new Option(", "var option:options.Option = new options.Option(")
+              p.write_text(s)
+          PY
           # HTML5 cannot enumerate local directories; the character list file is still loaded above.
           python3 - <<'PY'
           from pathlib import Path
@@ -123,6 +132,31 @@ jobs:
           cool = Path("source/backend/CoolUtil.hx")
           src = cool.read_text().replace('FlxG.error("Platform is not supported for CoolUtil.openFolder");', 'trace("Platform is not supported for CoolUtil.openFolder");')
           cool.write_text(src)
+          PY
+          # Current FlxAnimate filter renderer uses removed OpenFL canvas internals.
+          # Keep its software blend fallback on HTML5; desktop retains the full filter path.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path(os.environ["FLXANIMATE"]) / "flxanimate/display/FlxAnimateFilterRenderer.hx"
+          s = p.read_text()
+          start = s.index("\tpublic function applyBlend(blend:BlendMode, bitmap:BitmapData)")
+          end = s.index("\n\tpublic function graphicstoBitmapData", start)
+          fn = """\tpublic function applyBlend(blend:BlendMode, bitmap:BitmapData)
+          \t{
+          \t\t#if (js && html5)
+          \t\t// Canvas internals used by the upstream renderer are unavailable in this OpenFL version.
+          \t\treturn bitmap;
+          \t\t#else
+          \t\tvar bmp = new BitmapData(bitmap.width, bitmap.height, 0);
+          \t\tvar renderer = new CairoRenderer(new Cairo(bmp.getSurface()));
+          \t\tsetRenderer(renderer, bmp.rect);
+          \t\trenderer.__setBlendMode(blend);
+          \t\tbmp.__drawCairo(bitmap, renderer);
+          \t\treturn bmp;
+          \t\t#end
+          \t}
+          """
+          p.write_text(s[:start] + fn + s[end:])
           PY
           haxelib run lime setup -y
 
