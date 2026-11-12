@@ -163,6 +163,26 @@ jobs:
           PY
           haxelib run lime setup -y
 
+      - name: Guard optional weekBefore values in Freeplay
+        working-directory: psych
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("source/states/FreeplayState.hx")
+          s = p.read_text()
+          old = """\tfunction weekIsLocked(name:String):Bool {
+          \t\tvar leWeek:WeekData = WeekData.weeksLoaded.get(name);
+          \t\treturn (!leWeek.startUnlocked && leWeek.weekBefore.length > 0 && (!StoryMenuState.weekCompleted.exists(leWeek.weekBefore) || !StoryMenuState.weekCompleted.get(leWeek.weekBefore)));
+          \t}"""
+          new = """\tfunction weekIsLocked(name:String):Bool {
+          \t\tvar leWeek:WeekData = WeekData.weeksLoaded.get(name);
+          \t\treturn (leWeek != null && !leWeek.startUnlocked && leWeek.weekBefore != null && leWeek.weekBefore.length > 0 && (!StoryMenuState.weekCompleted.exists(leWeek.weekBefore) || !StoryMenuState.weekCompleted.get(leWeek.weekBefore)));
+          \t}"""
+          if old not in s:
+              raise SystemExit("FreeplayState.weekIsLocked did not match expected Psych 0.7.3 source")
+          p.write_text(s.replace(old, new))
+          PY
+
       - name: Build HTML5
         working-directory: psych
         run: haxelib run lime build html5 -release
