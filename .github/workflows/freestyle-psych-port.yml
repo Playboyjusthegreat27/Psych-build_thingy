@@ -69,9 +69,9 @@ jobs:
           OUT="psych/export/release/html5/bin"
           test -f "$OUT/index.html"
           mkdir -p "$OUT/assets"
-          cp -R psych/assets/data "$OUT/assets/"
-          cp -R psych/assets/weeks "$OUT/assets/"
-          cp -R psych/assets/characters "$OUT/assets/"
+          cp -R psych/assets/shared/data "$OUT/assets/data"
+          cp -R psych/assets/shared/weeks "$OUT/assets/weeks"
+          cp -R psych/assets/shared/characters "$OUT/assets/characters"
           test -f "$OUT/assets/data/doobop/doobop-hard.json"
           test -f "$OUT/assets/weeks/freestyle1.json"
 
